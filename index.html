@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>瑞奇活力館 - 快速盤點</title>
+    <title>瑞奇活力館 - 盤點系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -11,60 +11,59 @@
         body { font-family: 'Noto Sans TC', sans-serif; overflow: hidden; }
         #reader { width: 100%; border: none !important; }
         #reader__scan_region { background: #000; }
-        /* 隱藏庫原本的狀態文字，讓畫面更乾淨 */
         #reader__status_span { display: none !important; }
-        .list-container { height: calc(100vh - 420px); overflow-y: auto; }
-        .scan-feedback { animation: flash 0.5s ease-out; }
-        @keyframes flash {
-            0% { background-color: rgba(59, 130, 246, 0.5); }
-            100% { background-color: transparent; }
+        .list-container { height: calc(100vh - 460px); overflow-y: auto; }
+        .last-scan-popup { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
     </style>
 </head>
 <body class="bg-slate-100">
 
-    <!-- 上方：相機掃描區 (固定顯示) -->
     <div class="bg-black relative shadow-lg">
         <div id="reader"></div>
-        <!-- 掃描框遮罩與提示 -->
-        <div id="scan-overlay" class="absolute inset-0 pointer-events-none border-4 border-transparent flex items-center justify-center">
-            <div class="w-64 h-32 border-2 border-blue-400 opacity-50 rounded-lg"></div>
-            <div id="last-scanned-hint" class="absolute bottom-4 bg-blue-600 text-white px-4 py-1 rounded-full text-sm font-bold opacity-0 transition-opacity">
-                已記錄 +1
+        
+        <div id="hud" class="absolute bottom-0 left-0 right-0 bg-blue-600/90 backdrop-blur-md p-3 text-white hidden last-scan-popup">
+            <div class="flex justify-between items-center max-w-md mx-auto">
+                <div class="flex-1 min-w-0">
+                    <p class="text-[10px] opacity-80 uppercase tracking-widest">剛才掃描到：</p>
+                    <h4 id="hud-name" class="font-bold truncate text-sm">商品名稱</h4>
+                </div>
+                <div class="pl-4 text-right">
+                    <p class="text-[10px] opacity-80">累計</p>
+                    <p class="text-xl font-black"><span id="hud-qty">1</span> 件</p>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="p-4">
-        <!-- 中間：統計資訊 -->
-        <div class="flex justify-between items-center mb-4 bg-white p-4 rounded-2xl shadow-sm">
+        <div class="flex justify-between items-center mb-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div>
-                <p class="text-xs text-slate-400 font-bold uppercase">Total Items</p>
-                <h2 id="total-qty" class="text-3xl font-black text-slate-800">0</h2>
+                <p class="text-xs text-slate-400 font-bold">總計數量 (Total)</p>
+                <h2 id="total-qty" class="text-3xl font-black text-blue-600">0</h2>
             </div>
-            <div class="text-right">
-                <button onclick="exportToCSV()" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-bold">匯出報表</button>
-            </div>
+            <button onclick="exportToCSV()" class="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all">匯出報表</button>
         </div>
 
-        <!-- 下方：盤點清單 -->
-        <div class="list-container" id="list-container">
+        <div class="list-container">
             <div id="empty-state" class="text-center py-10 text-slate-400">
-                <p>等待掃描中...</p>
-                <p class="text-xs">請將商品條碼對準上方相機</p>
+                <div class="text-4xl mb-2">📸</div>
+                <p>等待感應...</p>
             </div>
             <div id="inventory-list" class="space-y-2"></div>
         </div>
     </div>
 
-    <!-- 底部控制鈕 -->
-    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t flex gap-2">
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 border-t flex gap-3">
         <button onclick="manualInput()" class="flex-1 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm">手動輸入</button>
-        <button onclick="clearInventory()" class="px-6 py-3 text-red-500 font-bold text-sm">清空</button>
+        <button onclick="clearInventory()" class="px-6 py-3 text-red-500 font-bold text-sm">清空重來</button>
     </div>
 
     <script>
-        // 資料庫對應：C欄(Key), D欄(Value)
+        // 資料庫 (已整合您提供的檔案資訊)
         const PRODUCT_DB = {
             "2318301000017": "受託代銷-E200-19萊卡素泳帽",
             "2318501000015": "受託代銷-C02-07海灘球",
@@ -78,46 +77,57 @@
             "4713696905868": "受託代銷-A4016-L男童泳裝.雷",
             "4713696905875": "受託代銷-A4016-XL男童泳裝.雷",
             "4713696905882": "受託代銷-A4016-EL男童泳裝.雷"
-            // 其他資料依此類推...
         };
 
-        let inventory = {};
+        let inventory = {}; // 格式: { "條碼": { name: "名稱", qty: 數量 } }
         let isScanning = true;
         const html5QrCode = new Html5Qrcode("reader");
 
-        // 啟動相機
         function startCamera() {
             const config = { fps: 20, qrbox: { width: 280, height: 150 } };
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
         }
 
         function onScanSuccess(decodedText) {
-            if (!isScanning) return; // 冷卻中不感應
+            if (!isScanning) return;
+            isScanning = false; 
 
-            isScanning = false; // 停止感應
             handleItem(decodedText.trim());
 
-            // 視覺與震動回饋
-            document.body.classList.add('scan-feedback');
-            document.getElementById('last-scanned-hint').style.opacity = '1';
-            if (navigator.vibrate) navigator.vibrate(100);
-
-            // 1.5 秒後重啟感應
-            setTimeout(() => {
-                isScanning = true;
-                document.body.classList.remove('scan-feedback');
-                document.getElementById('last-scanned-hint').style.opacity = '0';
-            }, 1500);
+            // 1.2 秒後恢復掃描，防止快速重複感應
+            setTimeout(() => { isScanning = true; }, 1200);
         }
 
         function handleItem(code) {
-            const name = PRODUCT_DB[code] || "未知商品";
+            const name = PRODUCT_DB[code] || "未知商品 (新貨號)";
+            
+            // --- 自動累計邏輯 ---
             if (inventory[code]) {
                 inventory[code].qty += 1;
             } else {
                 inventory[code] = { name: name, qty: 1 };
             }
+
+            // 即時顯示 HUD
+            showHUD(name, inventory[code].qty);
+            
+            // 震動回饋
+            if (navigator.vibrate) navigator.vibrate(80);
+
             render();
+        }
+
+        function showHUD(name, qty) {
+            const hud = document.getElementById('hud');
+            document.getElementById('hud-name').innerText = name;
+            document.getElementById('hud-qty').innerText = qty;
+            hud.classList.remove('hidden');
+            
+            // 3秒後自動隱藏提示
+            clearTimeout(window.hudTimer);
+            window.hudTimer = setTimeout(() => {
+                hud.classList.add('hidden');
+            }, 3000);
         }
 
         function render() {
@@ -129,65 +139,57 @@
             if (keys.length > 0) emptyState.style.display = 'none';
 
             listBody.innerHTML = '';
-            let total = 0;
+            let grandTotal = 0;
 
+            // 將最新更新的商品放在清單最上面
             keys.reverse().forEach(code => {
                 const item = inventory[code];
-                total += item.qty;
+                grandTotal += item.qty;
                 const div = document.createElement('div');
-                div.className = "bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-blue-500";
+                div.className = "bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-blue-500 animate-in fade-in duration-300";
                 div.innerHTML = `
                     <div class="flex-1 min-w-0 pr-4">
                         <p class="text-[10px] text-slate-400 font-mono">${code}</p>
                         <h3 class="font-bold text-slate-700 text-sm truncate">${item.name}</h3>
                     </div>
-                    <div class="flex items-center gap-3 bg-slate-50 px-3 py-1 rounded-lg">
-                        <button onclick="adjust('${code}', -1)" class="text-slate-400 font-bold">-</button>
-                        <span class="font-black text-blue-600">${item.qty}</span>
-                        <button onclick="adjust('${code}', 1)" class="text-slate-400 font-bold">+</button>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-slate-400">累計</span>
+                        <span class="text-xl font-black text-blue-600">${item.qty}</span>
                     </div>
                 `;
                 listBody.appendChild(div);
             });
-            totalDisplay.innerText = total;
-        }
-
-        function adjust(code, delta) {
-            if (inventory[code]) {
-                inventory[code].qty += delta;
-                if (inventory[code].qty <= 0) delete inventory[code];
-                render();
-            }
+            totalDisplay.innerText = grandTotal;
         }
 
         function manualInput() {
-            const code = prompt("請輸入條碼代號：");
+            const code = prompt("請輸入或貼上條碼：");
             if (code) handleItem(code.trim());
         }
 
         function clearInventory() {
-            if (confirm("要清空本次盤點清單嗎？")) {
+            if (confirm("確定要刪除所有盤點紀錄嗎？")) {
                 inventory = {};
                 render();
                 document.getElementById('empty-state').style.display = 'block';
+                document.getElementById('hud').classList.add('hidden');
             }
         }
 
         function exportToCSV() {
             const keys = Object.keys(inventory);
-            if (keys.length === 0) return alert("清單是空的");
-            let csv = "\ufeff條碼(C欄),品名(D欄),實盤數量\n";
+            if (keys.length === 0) return alert("目前清單沒有資料可以匯出");
+            let csv = "\ufeff條碼,品名,盤點件數\n";
             keys.forEach(k => {
                 csv += `"${k}","${inventory[k].name}",${inventory[k].qty}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
-            link.download = `瑞奇活力館盤點表_${new Date().getTime()}.csv`;
+            link.download = `瑞奇盤點表_${new Date().getMonth()+1}${new Date().getDate()}_${new Date().getHours()}${new Date().getMinutes()}.csv`;
             link.click();
         }
 
-        // 頁面載入後自動開啟相機
         window.addEventListener('load', startCamera);
     </script>
 </body>
