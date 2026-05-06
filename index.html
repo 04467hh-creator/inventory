@@ -22,10 +22,21 @@
 </head>
 <body class="bg-slate-100">
 
-    <div class="bg-black relative shadow-lg">
+    <!-- 相機與 HUD 區 -->
+    <div class="bg-black relative shadow-lg h-64 sm:h-80 overflow-hidden">
         <div id="reader"></div>
         
-        <div id="hud" class="absolute bottom-0 left-0 right-0 bg-blue-600/90 backdrop-blur-md p-3 text-white hidden last-scan-popup">
+        <!-- 初始啟動按鈕 (避免直接呼叫被瀏覽器封鎖) -->
+        <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-white p-6 text-center">
+            <div class="mb-4 text-4xl">📷</div>
+            <button onclick="startCamera()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold shadow-lg active:scale-95 transition-all">
+                點擊啟動相機
+            </button>
+            <p class="mt-4 text-xs text-slate-400">請在彈出視窗點選「允許」以開啟掃描功能</p>
+        </div>
+
+        <!-- 即時顯示最後掃描結果 (HUD) -->
+        <div id="hud" class="absolute bottom-0 left-0 right-0 bg-blue-600/90 backdrop-blur-md p-3 text-white hidden z-50 last-scan-popup">
             <div class="flex justify-between items-center max-w-md mx-auto">
                 <div class="flex-1 min-w-0">
                     <p class="text-[10px] opacity-80 uppercase tracking-widest">剛才掃描到：</p>
@@ -40,6 +51,7 @@
     </div>
 
     <div class="p-4">
+        <!-- 統計數據 -->
         <div class="flex justify-between items-center mb-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div>
                 <p class="text-xs text-slate-400 font-bold">總計數量 (Total)</p>
@@ -48,6 +60,7 @@
             <button onclick="exportToCSV()" class="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md active:scale-95 transition-all">匯出報表</button>
         </div>
 
+        <!-- 盤點清單 -->
         <div class="list-container">
             <div id="empty-state" class="text-center py-10 text-slate-400">
                 <div class="text-4xl mb-2">📸</div>
@@ -57,18 +70,20 @@
         </div>
     </div>
 
-    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 border-t flex gap-3">
+    <!-- 底部功能 -->
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 border-t flex gap-3 z-40">
         <button onclick="manualInput()" class="flex-1 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm">手動輸入</button>
         <button onclick="clearInventory()" class="px-6 py-3 text-red-500 font-bold text-sm">清空重來</button>
     </div>
 
     <script>
-        // 資料庫 (已整合您提供的檔案資訊)
+        // 商品資料庫
         const PRODUCT_DB = {
             "2318301000017": "受託代銷-E200-19萊卡素泳帽",
             "2318501000015": "受託代銷-C02-07海灘球",
             "2318502500019": "受託代銷-小座船-雷",
             "2318502500026": "受託代銷-中座船-雷",
+            "2318503000013": "受託代銷-大座船-雷",
             "4713696905813": "受託代銷-A4015-M男童泳裝.雷",
             "4713696905820": "受託代銷-A4015-L男童泳裝.雷",
             "4713696905837": "受託代銷-A4015-XL男童泳裝.雷",
@@ -76,16 +91,47 @@
             "4713696905851": "受託代銷-A4016-M男童泳裝.雷",
             "4713696905868": "受託代銷-A4016-L男童泳裝.雷",
             "4713696905875": "受託代銷-A4016-XL男童泳裝.雷",
-            "4713696905882": "受託代銷-A4016-EL男童泳裝.雷"
+            "4713696905882": "受託代銷-A4016-EL男童泳裝.雷",
+            "4713696905899": "受託代銷-A4017-M男童泳裝.雷",
+            "4713696905905": "受託代銷-A4017-L男童泳裝.雷",
+            "4713696905912": "受託代銷-A4017-XL男童泳裝.雷",
+            "4713696905929": "受託代銷-A4017-EL男童泳裝.雷",
+            "4713696905936": "受託代銷-A4018-M男童泳裝.雷",
+            "4713696905943": "受託代銷-A4018-L男童泳裝.雷",
+            "4713696905950": "受託代銷-A4018-XL男童泳裝.雷",
+            "4713696905967": "受託代銷-A4018-EL男童泳裝.雷",
+            "4713696905974": "受託代銷-A4019-M男童泳裝.雷",
+            "4713696905981": "受託代銷-A4019-L男童泳裝.雷",
+            "4713696905998": "受託代銷-A4019-XL男童泳裝.雷",
+            "4713696906001": "受託代銷-A4019-EL男童泳裝.雷",
+            "4713696906018": "受託代銷-A4020-M男童泳裝.雷",
+            "4713696906025": "受託代銷-A4020-L男童泳裝.雷",
+            "4713696906032": "受託代銷-A4020-XL男童泳裝.雷",
+            "4713696906049": "受託代銷-A4020-EL男童泳裝.雷"
         };
 
-        let inventory = {}; // 格式: { "條碼": { name: "名稱", qty: 數量 } }
+        let inventory = {}; 
         let isScanning = true;
         const html5QrCode = new Html5Qrcode("reader");
 
-        function startCamera() {
+        async function startCamera() {
+            const placeholder = document.getElementById('camera-placeholder');
             const config = { fps: 20, qrbox: { width: 280, height: 150 } };
-            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
+            
+            try {
+                await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
+                // 啟動成功後隱藏按鈕
+                placeholder.classList.add('hidden');
+            } catch (err) {
+                console.error(err);
+                if (err.name === 'NotAllowedError') {
+                    alert("相機權限被拒絕。請至手機瀏覽器設定中「允許」此網頁存取相機，或重新整理網頁後點擊啟動。");
+                } else if (err.name === 'NotFoundError') {
+                    alert("找不到相機硬體。");
+                } else {
+                    alert("啟動相機時發生錯誤：" + err);
+                }
+            }
         }
 
         function onScanSuccess(decodedText) {
@@ -93,27 +139,21 @@
             isScanning = false; 
 
             handleItem(decodedText.trim());
-
-            // 1.2 秒後恢復掃描，防止快速重複感應
+            // 冷卻機制：1.2 秒後恢復掃描
             setTimeout(() => { isScanning = true; }, 1200);
         }
 
         function handleItem(code) {
-            const name = PRODUCT_DB[code] || "未知商品 (新貨號)";
+            const name = PRODUCT_DB[code] || "未知商品 (" + code + ")";
             
-            // --- 自動累計邏輯 ---
             if (inventory[code]) {
                 inventory[code].qty += 1;
             } else {
                 inventory[code] = { name: name, qty: 1 };
             }
 
-            // 即時顯示 HUD
             showHUD(name, inventory[code].qty);
-            
-            // 震動回饋
             if (navigator.vibrate) navigator.vibrate(80);
-
             render();
         }
 
@@ -123,7 +163,6 @@
             document.getElementById('hud-qty').innerText = qty;
             hud.classList.remove('hidden');
             
-            // 3秒後自動隱藏提示
             clearTimeout(window.hudTimer);
             window.hudTimer = setTimeout(() => {
                 hud.classList.add('hidden');
@@ -141,12 +180,11 @@
             listBody.innerHTML = '';
             let grandTotal = 0;
 
-            // 將最新更新的商品放在清單最上面
-            keys.reverse().forEach(code => {
+            keys.slice().reverse().forEach(code => {
                 const item = inventory[code];
                 grandTotal += item.qty;
                 const div = document.createElement('div');
-                div.className = "bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-blue-500 animate-in fade-in duration-300";
+                div.className = "bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-blue-500 animate-in fade-in";
                 div.innerHTML = `
                     <div class="flex-1 min-w-0 pr-4">
                         <p class="text-[10px] text-slate-400 font-mono">${code}</p>
@@ -189,8 +227,6 @@
             link.download = `瑞奇盤點表_${new Date().getMonth()+1}${new Date().getDate()}_${new Date().getHours()}${new Date().getMinutes()}.csv`;
             link.click();
         }
-
-        window.addEventListener('load', startCamera);
     </script>
 </body>
 </html>
