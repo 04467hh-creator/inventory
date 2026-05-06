@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>瑞奇活力館 盤點助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .product-list-height { max-height: calc(100vh - 380px); overflow-y: auto; }
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+    <div class="max-w-md mx-auto p-4">
+        <!-- Header -->
+        <header class="mb-4 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
+            <div>
+                <h1 class="text-xl font-bold text-slate-800">瑞奇活力館</h1>
+                <p class="text-[10px] text-slate-500 font-mono uppercase tracking-tight">AI Inventory System v3.0</p>
+            </div>
+            <div class="text-right">
+                <span id="total-qty" class="block text-2xl font-black text-blue-600">0</span>
+                <span class="text-[10px] text-slate-400 uppercase font-bold">Total Qty</span>
+            </div>
+        </header>
+
+        <!-- Main Controls -->
+        <div class="grid grid-cols-2 gap-3 mb-6">
+            <button onclick="openScanner()" class="bg-blue-600 text-white p-4 rounded-2xl shadow-md flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span class="font-bold text-sm">相機掃描</span>
+            </button>
+            <button onclick="manualInput()" class="bg-white text-slate-700 p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span class="font-bold text-sm text-slate-600">手動輸入</span>
+            </button>
+        </div>
+
+        <!-- Inventory List -->
+        <div class="space-y-3">
+            <div class="flex justify-between items-end px-1">
+                <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest text-lg italic">Scan Record</h2>
+                <button onclick="clearInventory()" class="text-xs text-red-400 font-medium">清空所有</button>
+            </div>
+
+            <div id="inventory-container" class="space-y-2 product-list-height">
+                <!-- Empty State -->
+                <div id="empty-state" class="text-center py-20">
+                    <p class="text-slate-300 text-sm">尚未有盤點紀錄</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scanner Modal -->
+    <div id="scanner-modal" class="modal flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm bg-white rounded-3xl overflow-hidden relative">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold">掃描中...</h3>
+                <button onclick="closeScanner()" class="text-slate-400 text-xl">&times;</button>
+            </div>
+            <div class="p-4">
+                <div id="reader"></div>
+            </div>
+            <div class="p-4 text-center text-xs text-slate-400">
+                請將條碼置於框內
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Button -->
+    <div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-xs px-4">
+        <button onclick="exportToCSV()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl flex items-center justify-center gap-3">
+            <span>匯出 CSV 報表</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        // 真實資料庫
+        const PRODUCT_DB = {
+            "2318301000017": { name: "受託代銷-E200-19萊卡素泳帽", price: 100, dept: "運動指導科" },
+            "2318501000015": { name: "受託代銷-C02-07海灘球", price: 200, dept: "運動指導科" },
+            "2318502500019": { name: "受託代銷-小座船-雷", price: 350, dept: "運動指導科" },
+            "2318502500026": { name: "受託代銷-中座船-雷", price: 450, dept: "運動指導科" },
+            "4713696905813": { name: "受託代銷-A4015-M男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905820": { name: "受託代銷-A4015-L男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905837": { name: "受託代銷-A4015-XL男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905844": { name: "受託代銷-A4015-EL男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905851": { name: "受託代銷-A4016-M男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905868": { name: "受託代銷-A4016-L男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905875": { name: "受託代銷-A4016-XL男童泳裝.雷", price: 1280, dept: "運動指導科" },
+            "4713696905882": { name: "受託代銷-A4016-EL男童泳裝.雷", price: 1280, dept: "運動指導科" }
+        };
+
+        let inventory = {};
+        let scanner = null;
+
+        function openScanner() {
+            document.getElementById('scanner-modal').style.display = 'flex';
+            if (!scanner) {
+                scanner = new Html5Qrcode("reader");
+            }
+            const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+            scanner.start({ facingMode: "environment" }, config, (text) => {
+                handleScannedCode(text);
+                if (navigator.vibrate) navigator.vibrate(50);
+            }).catch(err => {
+                alert("相機啟動失敗，請確認權限或嘗試手動輸入。");
+                closeScanner();
+            });
+        }
+
+        function closeScanner() {
+            document.getElementById('scanner-modal').style.display = 'none';
+            if (scanner) {
+                scanner.stop().catch(e => console.error(e));
+            }
+        }
+
+        function manualInput() {
+            const code = prompt("請輸入或貼上條碼內容：");
+            if (code) handleScannedCode(code.trim());
+        }
+
+        function handleScannedCode(code) {
+            if (inventory[code]) {
+                inventory[code].qty += 1;
+            } else {
+                const info = PRODUCT_DB[code] || { name: "未記錄品項", price: 0, dept: "手動輸入" };
+                inventory[code] = { code, name: info.name, price: info.price, dept: info.dept, qty: 1 };
+            }
+            render();
+        }
+
+        function updateQty(code, delta) {
+            if (inventory[code]) {
+                inventory[code].qty += delta;
+                if (inventory[code].qty <= 0) delete inventory[code];
+                render();
+            }
+        }
+
+        function render() {
+            const container = document.getElementById('inventory-container');
+            const totalQtyDisplay = document.getElementById('total-qty');
+            const keys = Object.keys(inventory);
+            
+            let total = 0;
+            if (keys.length === 0) {
+                container.innerHTML = '<div class="text-center py-20 text-slate-300 text-sm">尚未有盤點紀錄</div>';
+                totalQtyDisplay.innerText = "0";
+                return;
+            }
+
+            container.innerHTML = "";
+            keys.reverse().forEach(code => {
+                const item = inventory[code];
+                total += item.qty;
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-2xl shadow-sm flex justify-between items-center border border-transparent active:border-blue-200 transition-all";
+                div.innerHTML = `
+                    <div class="flex-1 min-w-0 pr-2">
+                        <p class="text-[10px] font-bold text-blue-500 uppercase mb-0.5">${item.dept} | ${item.code}</p>
+                        <h3 class="font-bold text-slate-800 text-sm truncate">${item.name}</h3>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="updateQty('${code}', -1)" class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">-</button>
+                        <span class="font-black text-slate-800 w-4 text-center">${item.qty}</span>
+                        <button onclick="updateQty('${code}', 1)" class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">+</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            totalQtyDisplay.innerText = total;
+        }
+
+        function clearInventory() {
+            if (confirm("要清空所有紀錄嗎？")) {
+                inventory = {};
+                render();
+            }
+        }
+
+        function exportToCSV() {
+            const keys = Object.keys(inventory);
+            if (keys.length === 0) return alert("沒有資料");
+            let csv = "\ufeff區域,條碼,名稱,單價,實盤數,總額\n";
+            keys.forEach(k => {
+                const i = inventory[k];
+                csv += `"${i.dept}","${i.code}","${i.name}",${i.price},${i.qty},${i.price * i.qty}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `瑞奇活力館_盤點表_${new Date().getTime()}.csv`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
